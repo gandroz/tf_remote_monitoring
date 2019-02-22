@@ -2,7 +2,8 @@
 import json, time
 from flask import Flask, Response, jsonify, render_template, request
 import gevent
-from gevent.wsgi import WSGIServer
+from urllib.parse import unquote
+from gevent.pywsgi import WSGIServer
 from gevent.queue import Queue
 
 app = Flask(__name__)
@@ -31,16 +32,17 @@ class ServerSentEvent(object):
     def encode(self):
         if not self.data:
             return ""
-        lines = ["%s: %s" % (v, k) 
-                 for k, v in self.desc_map.iteritems() if k]
+        lines = ["%s: %s" % (v, k)
+                 for k, v in self.desc_map.items() if k]
+        msg = f"data: {self.data}\n\n".replace("'", "\"")
+        return msg
         
-        return "%s\n\n" % "\n".join(lines)
 
 @app.route("/publish/epoch/end/", methods=['POST'])
 def publish():
-    payload = request.form.get('data')
+    payload = request.json
     try:
-        data = json.loads(payload)
+        data = str(payload)  #json.loads(payload)
     except:
         return {'error':'invalid payload'}
 
@@ -48,7 +50,7 @@ def publish():
         msg = str(time.time())
         for sub in subscriptions[:]:
             sub.put(payload)
-    
+
     gevent.spawn(notify)
     return "OK"
 
@@ -64,6 +66,7 @@ def subscribe():
                 yield event.encode()
         except GeneratorExit:
             subscriptions.remove(q)
+            raise
 
     return Response(gen(), mimetype="text/event-stream")
 
